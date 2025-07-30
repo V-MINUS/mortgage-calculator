@@ -111,7 +111,7 @@ export default function MortgageCalculator() {
 
   const results = calculateMortgage()
 
-  const formatCurrency = (amount) => {
+  const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IE', {
       style: 'currency',
       currency: 'EUR',
