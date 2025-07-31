@@ -4,6 +4,7 @@ import * as React from "react"
 import { Slider } from "@/components/ui/slider"
 import { Label } from "@/components/ui/label"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import Link from "next/link"
 
 export default function MortgageCalculator() {
   const [mortgageAmount, setMortgageAmount] = React.useState(350000)
@@ -59,8 +60,15 @@ export default function MortgageCalculator() {
     const effective_rate = Math.pow(1 + rate_daily, days_between_payments) - 1
     const payment_standard = loanAmount * effective_rate / (1 - Math.pow(1 + effective_rate, -n_periods))
     
-    // Maximum allowed overpayment per year (10% of original loan)
-    const max_overpay_per_year = 0.10 * loanAmount
+    // Calculate monthly payment regardless of selected frequency for baseline comparison
+    const monthly_periods = termYears * 12
+    const monthly_days = 30.4375 // Average days in a month
+    const monthly_effective_rate = Math.pow(1 + rate_daily, monthly_days) - 1
+    const monthly_payment = loanAmount * monthly_effective_rate / (1 - Math.pow(1 + monthly_effective_rate, -monthly_periods))
+    
+    // Bank of Ireland overpayment rules: 10% of monthly payment or €65, whichever is greater (for fixed rate)
+    const max_monthly_overpay = Math.max(0.10 * monthly_payment, 65)
+    const max_overpay_per_year = max_monthly_overpay * 12
     const actual_overpay_per_year = max_overpay_per_year * (overpaymentPercent / 100)
     const overpay_per_period = actual_overpay_per_year / periods_per_year
 
@@ -73,6 +81,12 @@ export default function MortgageCalculator() {
     let standard_principal = loanAmount
     let standard_periods = 0
     let standard_total_paid = 0
+    
+    // For monthly base comparison - to show savings compared to monthly payments
+    let monthly_base_principal = loanAmount
+    let monthly_base_periods = 0
+    let monthly_base_total_paid = 0
+    const monthly_base_payment = monthly_payment
 
     // Calculate both scenarios in parallel for accurate comparison
     while (principal > 0.01 && periods < 4000) { // Increased max to handle longer-term calculations
@@ -117,6 +131,26 @@ export default function MortgageCalculator() {
         
         standard_periods++
       }
+      
+      // Calculate baseline monthly payment scenario for comparison
+      // This stays the same regardless of selected payment frequency
+      if (monthly_base_principal > 0.01 && monthly_base_periods < termYears * 12) {
+        // Monthly interest calculation
+        const monthly_interest = monthly_base_principal * (Math.pow(1 + rate_daily, monthly_days) - 1)
+        const monthly_principal_payment = monthly_base_payment - monthly_interest
+        
+        if (monthly_principal_payment <= 0) break
+        
+        if (monthly_principal_payment >= monthly_base_principal) {
+          monthly_base_total_paid += monthly_base_principal + monthly_interest
+          monthly_base_principal = 0
+        } else {
+          monthly_base_principal -= monthly_principal_payment
+          monthly_base_total_paid += monthly_base_payment
+        }
+        
+        monthly_base_periods++
+      }
 
       periods++
     }
@@ -128,7 +162,15 @@ export default function MortgageCalculator() {
 
     // Use calculated values for standard mortgage comparison
     const standard_interest = standard_total_paid - loanAmount
+    
+    // Calculate monthly base scenario interest
+    const monthly_base_interest = monthly_base_total_paid - loanAmount
+    
+    // Interest saved compared to standard (same frequency)
     const interest_saved = standard_interest - interest_paid
+    
+    // Interest saved compared to monthly payments (baseline)
+    const interest_saved_vs_monthly = monthly_base_interest - interest_paid
 
     return {
       years,
@@ -136,10 +178,14 @@ export default function MortgageCalculator() {
       total_paid,
       interest_paid,
       interest_saved,
+      interest_saved_vs_monthly,
       payment_amount: payment_standard,
+      monthly_payment: monthly_base_payment,
       overpay_amount: overpay_per_period,
+      max_monthly_overpay,
       standard_total: standard_total_paid,
       standard_interest,
+      monthly_base_interest,
       loanAmount
     }
   }
@@ -163,9 +209,14 @@ export default function MortgageCalculator() {
 
   return (
     <div className="max-w-4xl mx-auto p-6 bg-white rounded-xl shadow-lg">
-      <h1 className="text-3xl font-bold text-center mb-8 text-gray-800">
+      <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">
         Mortgage Overpayment Calculator
       </h1>
+      <div className="text-center mb-8">
+        <Link href="/grants" className="text-blue-600 hover:underline text-sm">
+          First-Time Buyer? Check Grant Eligibility →
+        </Link>
+      </div>
 
       <div className="grid md:grid-cols-2 gap-8">
         {/* Controls */}
@@ -353,6 +404,28 @@ export default function MortgageCalculator() {
                 <span>{termYears - results.years} years {12 - results.rem_months} months</span>
               </div>
             </div>
+            
+            {/* Monthly Payment Comparison - Only show if not monthly */}
+            {paymentFrequency !== 'monthly' && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <h4 className="text-md font-semibold mb-2 text-blue-700">Monthly vs {getFrequencyText()} Comparison</h4>
+                
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span>Monthly Payment:</span>
+                    <span>{formatCurrency(results.monthly_payment || 0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Monthly Total Interest:</span>
+                    <span>{formatCurrency(results.monthly_base_interest || 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-blue-600 font-medium">
+                    <span>Interest Saved with {getFrequencyText()}:</span>
+                    <span>{formatCurrency(results.interest_saved_vs_monthly || 0)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
