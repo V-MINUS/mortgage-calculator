@@ -11,7 +11,7 @@ export default function MortgageCalculator() {
   const [overpaymentYears, setOverpaymentYears] = React.useState(5)
   const [termYears, setTermYears] = React.useState(20)
   const [deposit, setDeposit] = React.useState(30000)
-  const [paymentFrequency, setPaymentFrequency] = React.useState('monthly') // 'monthly' or 'weekly'
+  const [paymentFrequency, setPaymentFrequency] = React.useState('monthly') // 'monthly', 'fortnightly', or 'weekly'
 
   const rate_annual = 0.031
 
@@ -33,33 +33,51 @@ export default function MortgageCalculator() {
       }
     }
 
-    let r_period, n_periods, periods_per_year
+    // Daily interest rate - banks calculate interest daily
+    const rate_daily = rate_annual / 365
+    
+    let periods_per_year: number
+    let days_between_payments: number
     
     if (paymentFrequency === 'weekly') {
       periods_per_year = 52
-      r_period = rate_annual / periods_per_year
-      n_periods = termYears * periods_per_year
-    } else {
+      days_between_payments = 7 // 7 days between payments
+    } else if (paymentFrequency === 'fortnightly') {
+      periods_per_year = 26
+      days_between_payments = 14 // 14 days between payments
+    } else { // monthly
       periods_per_year = 12
-      r_period = rate_annual / periods_per_year
-      n_periods = termYears * periods_per_year
+      days_between_payments = 30.4375 // Average days in a month (365.25/12)
     }
 
-    // Standard payment
-    const payment_standard = loanAmount * r_period / (1 - Math.pow(1 + r_period, -n_periods))
-
+    // Total number of payments over the mortgage term
+    const n_periods = termYears * periods_per_year
+    
+    // Calculate payment amount using daily interest compounding
+    // Formula modified to account for daily interest accrual
+    // For standard monthly payment calculation
+    const effective_rate = Math.pow(1 + rate_daily, days_between_payments) - 1
+    const payment_standard = loanAmount * effective_rate / (1 - Math.pow(1 + effective_rate, -n_periods))
+    
     // Maximum allowed overpayment per year (10% of original loan)
     const max_overpay_per_year = 0.10 * loanAmount
     const actual_overpay_per_year = max_overpay_per_year * (overpaymentPercent / 100)
     const overpay_per_period = actual_overpay_per_year / periods_per_year
 
-    // Amortization with overpayments
+    // Amortization with overpayments using daily interest calculations
     let principal = loanAmount
     let periods = 0
     let total_paid = 0
+    
+    // For comparisons - standard mortgage with same payment frequency but no overpayments
+    let standard_principal = loanAmount
+    let standard_periods = 0
+    let standard_total_paid = 0
 
-    while (principal > 0.01 && periods < 2000) {
-      const interest = principal * r_period
+    // Calculate both scenarios in parallel for accurate comparison
+    while (principal > 0.01 && periods < 4000) { // Increased max to handle longer-term calculations
+      // Daily interest accrual over the payment period
+      const interest_accrued = principal * (Math.pow(1 + rate_daily, days_between_payments) - 1)
       let payment_total
 
       // Apply overpayments only for the specified years
@@ -69,17 +87,35 @@ export default function MortgageCalculator() {
         payment_total = payment_standard
       }
 
-      const principal_payment = payment_total - interest
+      const principal_payment = payment_total - interest_accrued
 
       if (principal_payment <= 0) break
 
       if (principal_payment >= principal) {
         // Final payment
-        total_paid += principal + interest
+        total_paid += principal + interest_accrued
         principal = 0
       } else {
         principal -= principal_payment
         total_paid += payment_total
+      }
+
+      // Calculate standard mortgage without overpayments for comparison
+      if (standard_principal > 0.01 && standard_periods < termYears * periods_per_year) {
+        const standard_interest = standard_principal * (Math.pow(1 + rate_daily, days_between_payments) - 1)
+        const standard_principal_payment = payment_standard - standard_interest
+        
+        if (standard_principal_payment <= 0) break
+        
+        if (standard_principal_payment >= standard_principal) {
+          standard_total_paid += standard_principal + standard_interest
+          standard_principal = 0
+        } else {
+          standard_principal -= standard_principal_payment
+          standard_total_paid += payment_standard
+        }
+        
+        standard_periods++
       }
 
       periods++
@@ -90,9 +126,8 @@ export default function MortgageCalculator() {
     const rem_months = paymentFrequency === 'weekly' ? Math.round(rem_periods / 4.33) : rem_periods
     const interest_paid = total_paid - loanAmount
 
-    // Calculate standard mortgage for comparison
-    const standard_total = payment_standard * (termYears * periods_per_year)
-    const standard_interest = standard_total - loanAmount
+    // Use calculated values for standard mortgage comparison
+    const standard_interest = standard_total_paid - loanAmount
     const interest_saved = standard_interest - interest_paid
 
     return {
@@ -103,7 +138,7 @@ export default function MortgageCalculator() {
       interest_saved,
       payment_amount: payment_standard,
       overpay_amount: overpay_per_period,
-      standard_total,
+      standard_total: standard_total_paid,
       standard_interest,
       loanAmount
     }
@@ -121,7 +156,9 @@ export default function MortgageCalculator() {
   }
 
   const getFrequencyText = () => {
-    return paymentFrequency === 'weekly' ? 'Weekly' : 'Monthly'
+    if (paymentFrequency === 'weekly') return 'Weekly'
+    if (paymentFrequency === 'fortnightly') return 'Fortnightly'
+    return 'Monthly'
   }
 
   return (
@@ -147,6 +184,7 @@ export default function MortgageCalculator() {
                 onValueChange={(value) => value && setPaymentFrequency(value)}
               >
                 <ToggleGroupItem value="monthly">Monthly</ToggleGroupItem>
+                <ToggleGroupItem value="fortnightly">Fortnightly</ToggleGroupItem>
                 <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
               </ToggleGroup>
             </div>
